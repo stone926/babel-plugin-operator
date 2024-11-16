@@ -15,6 +15,6 @@
     ]
   ],
   "plugins": [
-    ["./plugin-operator/main.js", { "operatorObjectName": "$operator", "originalMark": "__original__" }]
+    ["./plugin-operator/main.js", { "operatorObjectName": "$operator", "encoding": "utf8" }]
   ]
 }

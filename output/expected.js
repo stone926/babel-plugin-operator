@@ -67,10 +67,12 @@ const $operator = exports.$operator = {
     // %=
     return left % right + 1;
   },
-  and(l, r) {}
+  and(l, r) {},
+  nullishCoalesce(l, r) {}
 };
 $operator.and(a, b);
 $operator.plus(a, b);
+$operator.nullishCoalesce(a, b);
 function f() {
   return 999;
 }

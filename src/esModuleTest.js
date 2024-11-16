@@ -6,4 +6,6 @@ class T {
 }
 console.log(1 + "1");
 console.log(1 - "1");
-9 / 1;
+!a;
+a ?? "";
+a >> 1;
