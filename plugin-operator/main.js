@@ -91,6 +91,16 @@ export default function ({ types: t }) {
             });
           }
         }
+        const visitorFactory = (replacement) => (path) => {
+          const operatorObjectParent = path.findParent((parentPath) =>
+            t.isVariableDeclaration(parentPath) && operatorObjName == parentPath.node.declarations?.[0].id.name
+          );
+          if (operatorObjectParent) return;
+          const operator = outer.registeredOperators.get(path.node.operator + path.node.prefix ?? "");
+          if (operator) {
+            path.replaceWithMultiple(replacement(operator, path));
+          }
+        }
 
         // 若import了$operator，获取$operator所在文件的路径并存储
         path.traverse({
@@ -112,7 +122,6 @@ export default function ({ types: t }) {
         if (operatorFileName) {
           let operatorFile = fs.readFileSync(operatorFileName, { encoding: outer.encoding });
           const ast = parser.parse(operatorFile, { sourceType: "module" });
-          // console.log(traverse)
           traverse.default(ast, { VariableDeclaration })
         } else { // 如果没有import $operator，在当前文件中寻找并注册重载
           path.traverse({ VariableDeclaration });
@@ -120,92 +129,47 @@ export default function ({ types: t }) {
 
         // 所有重载都注册完毕，接下来替换被重载的运算
         path.traverse({
-          "BinaryExpression|LogicalExpression"(path) {
-            const operatorObjectParent = path.findParent((parentPath) =>
-              t.isVariableDeclaration(parentPath) && operatorObjName == parentPath.node.declarations?.[0].id.name
-            );
-            if (operatorObjectParent) return;
-            const operator = outer.registeredOperators.get(path.node.operator);
-            if (operator) {
-              path.replaceWith(
-                t.callExpression(
-                  t.memberExpression(t.identifier(operatorObjName), t.identifier(operator)),
-                  [path.node.left, path.node.right]
+          "BinaryExpression|LogicalExpression": visitorFactory((operator, path) => t.callExpression(
+            t.memberExpression(t.identifier(operatorObjName), t.identifier(operator)),
+            [path.node.left, path.node.right]
+          )),
+          AssignmentExpression: visitorFactory((operator, path) => t.parenthesizedExpression(
+            t.assignmentExpression(
+              "=", path.node.left, t.callExpression(
+                t.memberExpression(t.identifier(operatorObjName), t.identifier(operator)),
+                [path.node.left, path.node.right]
+              )
+            ), path.node.left
+          )),
+          UpdateExpression: visitorFactory((operator, path) => {
+            if (path.node.prefix) {
+              return t.parenthesizedExpression(
+                t.assignmentExpression(
+                  "=", path.node.argument, t.callExpression(
+                    t.memberExpression(t.identifier(operatorObjName), t.identifier(operator)),
+                    [path.node.argument]
+                  )
                 )
-              );
-            }
-          },
-          AssignmentExpression(path) {
-            const operatorObjectParent = path.findParent((parentPath) =>
-              t.isVariableDeclaration(parentPath) && operatorObjName == parentPath.node.declarations?.[0].id.name
-            );
-            if (operatorObjectParent) return;
-            const operator = outer.registeredOperators.get(path.node.operator);
-            if (operator) {
-              path.replaceWith(
-                t.parenthesizedExpression(
+              )
+            } else {
+              path.replaceWith(path.node.argument);
+              path.insertAfter(
+                t.expressionStatement(
                   t.assignmentExpression(
-                    "=", path.node.left,
-                    t.callExpression(
+                    "=", path.node, t.callExpression(
                       t.memberExpression(t.identifier(operatorObjName), t.identifier(operator)),
-                      [path.node.left, path.node.right]
-                    )
-                  ),
-                  path.node.left
-                )
-              );
-            }
-          },
-          UpdateExpression(path) {
-            const operatorObjectParent = path.findParent((parentPath) =>
-              t.isVariableDeclaration(parentPath) && operatorObjName == parentPath.node.declarations?.[0].id.name
-            );
-            if (operatorObjectParent) return;
-            const operator = outer.registeredOperators.get(path.node.operator + path.node.prefix);
-            if (operator) {
-              if (path.node.prefix) {
-                path.replaceWith(
-                  t.parenthesizedExpression(
-                    t.assignmentExpression(
-                      "=", path.node.argument,
-                      t.callExpression(
-                        t.memberExpression(t.identifier(operatorObjName), t.identifier(operator)),
-                        [path.node.argument]
-                      )
+                      [path.node]
                     )
                   )
-                );
-              } else {
-                path.replaceWith(path.node.argument);
-                path.insertAfter(
-                  t.expressionStatement(
-                    t.assignmentExpression(
-                      "=", path.node,
-                      t.callExpression(
-                        t.memberExpression(t.identifier(operatorObjName), t.identifier(operator)),
-                        [path.node]
-                      )
-                    )
-                  )
-                );
-              }
-            }
-          },
-          UnaryExpression(path) {
-            const operatorObjectParent = path.findParent((parentPath) =>
-              t.isVariableDeclaration(parentPath) && operatorObjName == parentPath.node.declarations?.[0].id.name
-            );
-            if (operatorObjectParent) return;
-            const operator = outer.registeredOperators.get(path.node.operator);
-            if (operator) {
-              path.replaceWith(
-                t.callExpression(
-                  t.memberExpression(t.identifier(operatorObjName), t.identifier(operator)),
-                  [path.node.argument]
                 )
               );
+              return path.node;
             }
-          }
+          }),
+          UnaryExpression: visitorFactory((operator, path) => t.callExpression(
+            t.memberExpression(t.identifier(operatorObjName), t.identifier(operator)),
+            [path.node.argument]
+          ))
         });
       }
     },
