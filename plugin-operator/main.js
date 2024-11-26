@@ -1,4 +1,9 @@
-module.exports = function ({ types: t }) {
+import nodePath from "path";
+import fs from "fs";
+import parser from "@babel/parser";
+import traverse from "@babel/traverse";
+
+export default function ({ types: t }) {
   const m = {
     plus: "+",
     minus: "-",
@@ -47,98 +52,102 @@ module.exports = function ({ types: t }) {
     instanceof: "instanceof",
     typeof: "typeof"
   };
-  const isOriginal = (node, originalMark) => {
-    let b = false;
-    node.trailingComments?.forEach(comment => {
-      b = (comment.value === originalMark);
-      if (b) comment.value = "";
-    });
-    // t.removeComments(node);
-    return b;
-  };
   return {
     pre(state) {
       // key: 运算符; value: MethodName
       this.registeredOperators = new Map();
-      // value: the names of operate class
       this.operatorObjectName = state.opts.operatorObjectName ?? "$operator";
-      this.originalMark = state.opts.originalMark ?? "__original__";
+      this.encoding = state.opts.encoding ?? "utf8";
+      this.hasOperator = false;
     },
     visitor: {
       Program(path, state) {
-        const operatorObjectName = this.operatorObjectName;
-        const originalMark = this.originalMark;
-        const registeredOperators = this.registeredOperators;
-        path.traverse({
-          VariableDeclaration(path) {
-            const that = this;
-            const name = path.node.declarations?.[0].id.name;
-            if (name === this.operatorObjectName) {
-              if (path.node.kind !== "const") {
-                path.buildCodeFrameError("The operator object must be a constant!");
-                return;
-              }
-              path.node.declarations?.[0].init.properties.forEach(item => {
-                if (t.isObjectMethod(item)) {
-                  const methodName = item.key.name;
-                  if (Object.keys(m).includes(methodName)) {
-                    if (methodName !== "incrementSuffix" &&
-                      methodName !== "incrementPrefix" &&
-                      methodName !== "decrementSuffix" &&
-                      methodName !== "decrementPrefix"
-                    ) {
-                      that.registeredOperators.set(m[methodName], methodName);
+        const outer = this;
+        let operatorFileName = undefined, operatorObjName = this.operatorObjectName;
+        const VariableDeclaration = (path) => {
+          const name = path.node.declarations?.[0].id.name;
+          if (name === outer.operatorObjectName) {
+            path.node.declarations?.[0].init.properties.forEach(item => {
+              if (t.isObjectMethod(item)) {
+                const methodName = item.key.name;
+                if (Object.keys(m).includes(methodName)) {
+                  if (methodName !== "incrementSuffix" &&
+                    methodName !== "incrementPrefix" &&
+                    methodName !== "decrementSuffix" &&
+                    methodName !== "decrementPrefix"
+                  ) {
+                    outer.registeredOperators.set(m[methodName], methodName);
+                  } else {
+                    let s = m[methodName];
+                    if (methodName == "incrementSuffix" || methodName == "decrementSuffix") {
+                      s += "false";
                     } else {
-                      let s = m[methodName];
-                      if (methodName == "incrementSuffix" || methodName == "decrementSuffix") {
-                        s += "false";
-                      } else {
-                        s += "true";
-                      }
-                      that.registeredOperators.set(s, methodName);
+                      s += "true";
                     }
+                    outer.registeredOperators.set(s, methodName);
                   }
                 }
-              });
+              }
+            });
+          }
+        }
+
+        // 若import了$operator，获取$operator所在文件的路径并存储
+        path.traverse({
+          ImportDeclaration(path) {
+            for (let i = 0; i < (path.node.specifiers.length ?? 0); i++) {
+              let specifier = path.node.specifiers[i];
+              if (specifier.imported.name === outer.operatorObjectName) {
+                let x = path.node.source.value;
+                if (!x.endsWith(".js")) x += ".js"
+                operatorFileName = nodePath.join(state.filename, "../", x);
+                operatorObjName = specifier.local.name;
+                return;
+              }
             }
-          },
+          }
+        });
+
+        // 如果import了$operator，读入文件并生成ast，从而注册重载
+        if (operatorFileName) {
+          let operatorFile = fs.readFileSync(operatorFileName, { encoding: outer.encoding });
+          const ast = parser.parse(operatorFile, { sourceType: "module" });
+          // console.log(traverse)
+          traverse.default(ast, { VariableDeclaration })
+        } else { // 如果没有import $operator，在当前文件中寻找并注册重载
+          path.traverse({ VariableDeclaration });
+        }
+
+        // 所有重载都注册完毕，接下来替换被重载的运算
+        path.traverse({
           "BinaryExpression|LogicalExpression"(path) {
-            const that = this;
             const operatorObjectParent = path.findParent((parentPath) =>
-              t.isVariableDeclaration(parentPath) && that.operatorObjectName == parentPath.node.declarations?.[0].id.name
+              t.isVariableDeclaration(parentPath) && operatorObjName == parentPath.node.declarations?.[0].id.name
             );
             if (operatorObjectParent) return;
-            const operator = this.registeredOperators.get(path.node.operator);
+            const operator = outer.registeredOperators.get(path.node.operator);
             if (operator) {
               path.replaceWith(
                 t.callExpression(
-                  t.memberExpression(
-                    t.identifier(this.operatorObjectName),
-                    t.identifier(operator)
-                  ),
+                  t.memberExpression(t.identifier(operatorObjName), t.identifier(operator)),
                   [path.node.left, path.node.right]
                 )
               );
             }
           },
           AssignmentExpression(path) {
-            const that = this;
             const operatorObjectParent = path.findParent((parentPath) =>
-              t.isVariableDeclaration(parentPath) && that.operatorObjectName == parentPath.node.declarations?.[0].id.name
+              t.isVariableDeclaration(parentPath) && operatorObjName == parentPath.node.declarations?.[0].id.name
             );
             if (operatorObjectParent) return;
-            const operator = this.registeredOperators.get(path.node.operator);
+            const operator = outer.registeredOperators.get(path.node.operator);
             if (operator) {
               path.replaceWith(
                 t.parenthesizedExpression(
                   t.assignmentExpression(
-                    "=",
-                    path.node.left,
+                    "=", path.node.left,
                     t.callExpression(
-                      t.memberExpression(
-                        t.identifier(this.operatorObjectName),
-                        t.identifier(operator)
-                      ),
+                      t.memberExpression(t.identifier(operatorObjName), t.identifier(operator)),
                       [path.node.left, path.node.right]
                     )
                   ),
@@ -148,24 +157,19 @@ module.exports = function ({ types: t }) {
             }
           },
           UpdateExpression(path) {
-            const that = this;
             const operatorObjectParent = path.findParent((parentPath) =>
-              t.isVariableDeclaration(parentPath) && that.operatorObjectName == parentPath.node.declarations?.[0].id.name
+              t.isVariableDeclaration(parentPath) && operatorObjName == parentPath.node.declarations?.[0].id.name
             );
             if (operatorObjectParent) return;
-            const operator = this.registeredOperators.get(path.node.operator + path.node.prefix);
+            const operator = outer.registeredOperators.get(path.node.operator + path.node.prefix);
             if (operator) {
               if (path.node.prefix) {
                 path.replaceWith(
                   t.parenthesizedExpression(
                     t.assignmentExpression(
-                      "=",
-                      path.node.argument,
+                      "=", path.node.argument,
                       t.callExpression(
-                        t.memberExpression(
-                          t.identifier(this.operatorObjectName),
-                          t.identifier(operator)
-                        ),
+                        t.memberExpression(t.identifier(operatorObjName), t.identifier(operator)),
                         [path.node.argument]
                       )
                     )
@@ -176,13 +180,9 @@ module.exports = function ({ types: t }) {
                 path.insertAfter(
                   t.expressionStatement(
                     t.assignmentExpression(
-                      "=",
-                      path.node,
+                      "=", path.node,
                       t.callExpression(
-                        t.memberExpression(
-                          t.identifier(this.operatorObjectName),
-                          t.identifier(operator)
-                        ),
+                        t.memberExpression(t.identifier(operatorObjName), t.identifier(operator)),
                         [path.node]
                       )
                     )
@@ -192,25 +192,21 @@ module.exports = function ({ types: t }) {
             }
           },
           UnaryExpression(path) {
-            const that = this;
             const operatorObjectParent = path.findParent((parentPath) =>
-              t.isVariableDeclaration(parentPath) && that.operatorObjectName == parentPath.node.declarations?.[0].id.name
+              t.isVariableDeclaration(parentPath) && operatorObjName == parentPath.node.declarations?.[0].id.name
             );
             if (operatorObjectParent) return;
-            const operator = this.registeredOperators.get(path.node.operator);
+            const operator = outer.registeredOperators.get(path.node.operator);
             if (operator) {
               path.replaceWith(
                 t.callExpression(
-                  t.memberExpression(
-                    t.identifier(this.operatorObjectName),
-                    t.identifier(operator)
-                  ),
+                  t.memberExpression(t.identifier(operatorObjName), t.identifier(operator)),
                   [path.node.argument]
                 )
               );
             }
           }
-        }, { operatorObjectName, originalMark, registeredOperators });
+        });
       }
     },
     post(state) { },
