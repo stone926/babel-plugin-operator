@@ -15,6 +15,6 @@
     ]
   ],
   "plugins": [
-    ["./plugin-operator/main.js", { "operatorObjectName": "$operator", "encoding": "utf8" }]
+    ["./dist/index.mjs", { "operatorObjectName": "$operator", "encoding": "utf8" }]
   ]
 }

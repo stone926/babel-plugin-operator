@@ -1,0 +1,5 @@
+src/
+output/
+plugin-operator/
+babel.config.json
+.vscode/
