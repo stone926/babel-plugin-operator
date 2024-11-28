@@ -1,9 +1,10 @@
-import nodePath from "path";
-import fs from "fs";
-import parser from "@babel/parser";
-import traverse from "@babel/traverse";
+// import nodePath from "path";
+const nodePath = require("node:path");
+const fs = require("node:fs");
+const parser = require("@babel/parser");
+const traverse = require("@babel/traverse");
 
-export default function ({ types: t }) {
+const f = function ({ types: t }) {
   const m = {
     plus: "+",
     minus: "-",
@@ -58,7 +59,6 @@ export default function ({ types: t }) {
       this.registeredOperators = new Map();
       this.operatorObjectName = state.opts.operatorObjectName ?? "$operator";
       this.encoding = state.opts.encoding ?? "utf8";
-      this.hasOperator = false;
     },
     visitor: {
       Program(path, state) {
@@ -96,9 +96,9 @@ export default function ({ types: t }) {
             t.isVariableDeclaration(parentPath) && operatorObjName == parentPath.node.declarations?.[0].id.name
           );
           if (operatorObjectParent) return;
-          const operator = outer.registeredOperators.get(path.node.operator + path.node.prefix ?? "");
+          const operator = outer.registeredOperators.get(path.node.operator + (path.node.prefix ?? ""));
           if (operator) {
-            path.replaceWithMultiple(replacement(operator, path));
+            path.replaceWith(replacement(operator, path));
           }
         }
 
@@ -176,3 +176,6 @@ export default function ({ types: t }) {
     post(state) { },
   }
 }
+
+module.exports = f;
+module.exports.default = f;

@@ -72,10 +72,10 @@ const $operator = exports.$operator = {
 
   // }
 };
-a && b;
-a + b;
+$operator.and(a, b);
+$operator.plus(a, b);
 (_a = a) !== null && _a !== void 0 ? _a : b;
-a += b;
+(a = $operator.plusAssignment(a, b));
 a;
 a = $operator.incrementSuffix(a);
 (a = $operator.incrementPrefix(a));

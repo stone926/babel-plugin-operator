@@ -4,6 +4,7 @@ class T {
     return a + b;
   }
 }
+a++;
 console.log(1 + "1");
 console.log(1 - "1");
 !a;
