@@ -1,5 +1,9 @@
 src/
 output/
-plugin-operator/
+input/
+test/
+.gitignore
+tsconfig.json
+rollup.config.ts
 babel.config.json
 .vscode/
