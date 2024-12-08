@@ -67,11 +67,15 @@ const $operator = exports.$operator = {
     // %=
     return left % right + 1;
   },
-  and(l, r) {}
-  // nullishCoalesce(l, r) {
-
-  // }
+  and(l, r) {},
+  or(l, r) {},
+  not(x) {},
+  typeof(x) {}
 };
+$operator.not(a);
+$operator.not(-1);
+$operator.typeof(a);
+$operator.or(1, 1);
 $operator.and(a, b);
 $operator.plus(a, b);
 (_a = a) !== null && _a !== void 0 ? _a : b;

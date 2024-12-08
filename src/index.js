@@ -1,198 +1,12 @@
-import path from 'node:path';
-import fs from 'node:fs';
-import parser from '@babel/parser';
-import traverse from '@babel/traverse';
-import syntaxTypeScript from '@babel/plugin-syntax-typescript';
-import * as t from '@babel/types';
+import nodePath from "node:path";
+import fs from "node:fs";
+import parser from "@babel/parser";
+import traverse from "@babel/traverse";
+import syntaxTypeScript from "@babel/plugin-syntax-typescript";
+import getVarVisitor, { isTs } from "./util/variableDeclarationProvider.js";
+import { getType, isSameType } from "./util/types.js";
 
-const m = {
-  plus: "+",
-  minus: "-",
-  multiply: "*",
-  divide: "/",
-  mod: "%",
-  power: "**",
-  negative: "-negative",
-  incrementPrefix: "++",
-  incrementSuffix: "++",
-  decrementPrefix: "--",
-  decrementSuffix: "--",
-  plusAssignment: "+=",
-  minusAssignment: "-=",
-  multiplyAssignment: "*=",
-  divideAssignment: "/=",
-  modAssignment: "%=",
-  powerAssignment: "**=",
-  leftMoveAssignment: "<<=",
-  rightMoveAssignment: ">>=",
-  rightMoveUnsignedAssignment: ">>>=",
-  bitAndAssignment: "&=",
-  bitOrAssignment: "|=",
-  andAssignment: "&&=",
-  orAssignment: "||=",
-  nullishCoalesceAssignment: "??=",
-  equal: "==",
-  equalStrict: "===",
-  notEqual: "!=",
-  notEqualStrict: "!==",
-  greaterThanOrEqual: ">=",
-  lessThanOrEqual: "<=",
-  greaterThan: ">",
-  lessThan: "<",
-  and: "&&",
-  or: "||",
-  not: "!",
-  bitAnd: "&",
-  bitOr: "|",
-  bitNot: "~",
-  bitXor: "^",
-  leftMove: "<<",
-  rightMove: ">>",
-  rightMoveUnsigned: ">>>",
-  nullishCoalesce: "??",
-  in: "in",
-  instanceof: "instanceof",
-  typeof: "typeof"
-};
-
-const isFunctionOverloader = (node) => {
-  return t.isObjectMethod(node) || (
-    t.isObjectProperty(node) && (t.isFunctionExpression(node.value) || t.isArrowFunctionExpression(node.value))
-  )
-};
-
-const isArrayOverloader = (node) => {
-  return t.isObjectProperty(node) && t.isArrayExpression(node.value);
-};
-
-const registerOperator = (registry, name) => {
-  const primitiveName = name.toString();
-  if (Object.keys(m).includes(primitiveName)) {
-    if (primitiveName !== "incrementSuffix" &&
-      primitiveName !== "incrementPrefix" &&
-      primitiveName !== "decrementSuffix" &&
-      primitiveName !== "decrementPrefix"
-    ) {
-      registry.set(m[primitiveName], name);
-    } else {
-      let s = m[primitiveName];
-      if (primitiveName == "incrementSuffix" || primitiveName == "decrementSuffix") {
-        s += "false";
-      } else {
-        s += "true";
-      }
-      registry.set(s, name);
-    }
-  }
-};
-
-const jsVariableDeclarationVisitor = (outer) => (path) => {
-  const name = path.node.declarations[0].id.name;
-  if (name === outer.operatorObjectName) {
-    t.assertObjectExpression(path.node.declarations[0].init);
-    path.node.declarations[0].init.properties.forEach(item => {
-      if (isFunctionOverloader(item)) {
-        // console.log(item.key.name);
-        registerOperator(outer.registeredOperators, item.key.name);
-      }
-    });
-  }
-};
-
-const buildType = (functionNode, index=-1) => {
-  const typeAnnotated = {};
-  const anyTypeAnnotation = t.tsAnyKeyword();
-  if (functionNode.params.length == 2) {
-    typeAnnotated.left = functionNode.params[0].typeAnnotation?.typeAnnotation ?? anyTypeAnnotation;
-    typeAnnotated.right = functionNode.params[1].typeAnnotation?.typeAnnotation ?? anyTypeAnnotation;
-    // console.log(typeAnnotated.left, typeAnnotated.right);
-  } else if (functionNode.params.length == 1) {
-    typeAnnotated.unary = functionNode.params[0].typeAnnotation.typeAnnotation;
-    // console.log(typeAnnotated.unary)
-  } else {
-    throw path.buildCodeFrameError("Invalid Params Count");
-  }
-  typeAnnotated.return = functionNode.returnType?.typeAnnotation ?? anyTypeAnnotation;
-  typeAnnotated.index = index;
-  return typeAnnotated;
-};
-
-const tsVariableDeclarationVisitor = (outer) => (path) => {
-  const name = path.node.declarations?.[0].id.name;
-  if (name === outer.operatorObjectName) {
-    path.node.declarations?.[0].init.properties.forEach(item => {
-      const name = new String(item.key.name);
-      name.types = [];
-      if (isFunctionOverloader(item)) {
-        const functionNode = t.isObjectMethod(item) ? item : item.value;
-        name.types.push(buildType(functionNode));
-      } else if (isArrayOverloader(item)) {
-        item.value.elements.forEach((functionNode, index) => {
-          t.assertFunction(functionNode);
-          name.types.push(buildType(functionNode, index));
-        });
-      }
-      registerOperator(outer.registeredOperators, name);
-    });
-  }
-};
-
-const isTs = (filename) => {
-  switch (path.extname(filename)) {
-    case ".js":
-    case ".mjs":
-    case ".cjs":
-    case ".jsx":
-      return false;
-    case ".ts":
-    case ".mts":
-    case ".cts":
-    case ".tsx":
-      return true;
-    default: throw new Error(`unexpected file extension ${path.extname(filename)}`);
-  }
-};
-
-var getVarVisitor = (outer) => {
-  return outer.isTs ? tsVariableDeclarationVisitor(outer) : jsVariableDeclarationVisitor(outer);
-};
-
-const isSameType = (typeAnnotation1, typeAnnotation2) => {
-  // console.log(typeAnnotation1, "vs", typeAnnotation2, "\n");
-  if (typeAnnotation1?.type === typeAnnotation2?.type) {
-    if (typeAnnotation1.type === "TSTypeReference") {
-      return typeAnnotation1.typeName.name === typeAnnotation2.typeName.name
-    } else {
-      return true;
-    }
-  } else return false;
-};
-
-// 只支持identifier+identifier或literal+literal，并且类型显式声明，因为babel没有类型检查
-const getType = (node, scope, err) => {
-  if (t.isIdentifier(node)) {
-    const binding = scope.getBinding(node.name);
-    return binding.identifier.typeAnnotation?.typeAnnotation;
-  } else if (t.isStringLiteral(node) || t.isTemplateLiteral(node)) {
-    return t.tsStringKeyword();
-  } else if (t.isNumericLiteral(node)) {
-    return t.tsNumberKeyword();
-  } else if (t.isNullLiteral(node)) {
-    return t.tsNullKeyword();
-  } else if (t.isBooleanLiteral(node)) {
-    return t.tsBooleanKeyword();
-  } else if (t.isRegExpLiteral(node)) {
-    return t.tsTypeReference(t.identifier("RegExp"));
-  } else if (t.isBigIntLiteral(node)) {
-    return t.tsBigIntKeyword();
-  } else if (t.isDecimalLiteral(node)) { // !! what's this?
-    return t.tsNumberKeyword();
-  } else if (t.isUnaryExpression(node)) {
-    return node.operator === '-' && t.isNumericLiteral(node.argument) ? t.tsNumberKeyword() : undefined;
-  }
-};
-
-function index ({ types: t }) {
+export default function ({ types: t }) {
   return {
     pre(state) {
       // key: 运算符; value: MethodName
@@ -202,7 +16,7 @@ function index ({ types: t }) {
       this.isTs = false;
     },
     visitor: {
-      Program(path$1, state) {
+      Program(path, state) {
         const outer = this;
         this.isTs = isTs(state.filename);
         let operatorFileName = undefined, operatorObjName = this.operatorObjectName;
@@ -218,17 +32,17 @@ function index ({ types: t }) {
           if (operator) {
             path.replaceWith(replacement(operator, path));
           }
-        };
+        }
 
         // 若import了$operator，获取$operator所在文件的路径并存储
-        path$1.traverse({
-          ImportDeclaration(path$1) {
-            for (let i = 0; i < (path$1.node.specifiers.length ?? 0); i++) {
-              let specifier = path$1.node.specifiers[i];
+        path.traverse({
+          ImportDeclaration(path) {
+            for (let i = 0; i < (path.node.specifiers.length ?? 0); i++) {
+              let specifier = path.node.specifiers[i];
               if (specifier.imported.name === outer.operatorObjectName) {
-                let x = path$1.node.source.value;
-                if (!x.endsWith(".js")) x += ".js";
-                operatorFileName = path.join(state.filename, "../", x);
+                let x = path.node.source.value;
+                if (!x.endsWith(".js")) x += ".js"
+                operatorFileName = nodePath.join(state.filename, "../", x);
                 operatorObjName = specifier.local.name;
                 return;
               }
@@ -242,11 +56,11 @@ function index ({ types: t }) {
           const ast = parser.parse(operatorFile, { sourceType: "module" });
           traverse.default(ast, { VariableDeclaration });
         } else { // 如果没有import $operator，在当前文件中寻找并注册重载
-          path$1.traverse({ VariableDeclaration });
+          path.traverse({ VariableDeclaration });
         }
         // console.log(outer.registeredOperators)
         if (!outer.isTs) {
-          path$1.traverse({
+          path.traverse({
             "BinaryExpression|LogicalExpression": visitorFactory((operator, path) => t.callExpression(
               t.memberExpression(t.identifier(operatorObjName), t.identifier(operator)),
               [path.node.left, path.node.right]
@@ -290,7 +104,8 @@ function index ({ types: t }) {
             ), (path) => path.node.operator === '-' ? "negative" : "")
           });
         } else {
-          path$1.traverse({
+          let f = true;
+          path.traverse({
             "BinaryExpression|LogicalExpression": visitorFactory((operator, path) => {
               let R = path.node;
               const leftType = getType(path.node.left, path.scope, path.buildCodeFrameError);
@@ -417,7 +232,7 @@ function index ({ types: t }) {
             UnaryExpression: visitorFactory((operator, path) => {
               let R = path.node;
               const unaryType = getType(path.node.argument, path.scope, path.buildCodeFrameError);
-              console.log(path.node);
+              console.log(path.node)
               operator.types.forEach((type, index) => {
                 if (isSameType(unaryType, type.unary)) {
                   if (type.index == -1) {
@@ -437,7 +252,7 @@ function index ({ types: t }) {
               });
               return R;
             }, (path) => path.node.operator === '-' ? "negative" : "")
-          });
+          })
         }
       }
     },
@@ -445,5 +260,3 @@ function index ({ types: t }) {
     inherits: syntaxTypeScript.default,
   }
 }
-
-export { index as default };
