@@ -85,19 +85,19 @@ export default function ({ types: t }) {
           AssignmentExpression: visitorFactory((builded, { node: { left, right } }) => t.parenthesizedExpression(
             build(left)['='](builded(left, right))[build.raw]
           ), ["left", "right"]),
-          UpdateExpression: visitorFactory((builded, path) => {
-            if (path.node.prefix) {
-              return t.parenthesizedExpression(
+          UpdateExpression: visitorFactory((builded, path) =>
+            path.node.prefix ?
+              t.parenthesizedExpression(
                 build(path.node.argument)['='](builded(path.node.argument))[build.raw]
-              )
-            } else {
-              path.replaceWith(path.node.argument);
-              path.insertAfter(build(path.node)['='](builded(path.node))[build.raw]);
-            }
-          }, ["unary"], (path) => path.node.prefix),
+              ) :
+              void (
+                path.replaceWith(path.node.argument),
+                path.insertAfter(build(path.node)['='](builded(path.node))[build.raw])
+              ), ["argument"], (path) => path.node.prefix
+          ),
           UnaryExpression: visitorFactory(
             (builded, { node: { argument } }) => builded(argument),
-            ["unary"], (path) => path.node.operator === '-' ? "negative" : ""
+            ["argument"], (path) => path.node.operator === '-' ? "negative" : ""
           )
         });
       }

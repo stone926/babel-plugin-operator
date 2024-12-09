@@ -52,7 +52,7 @@ const buildType = (functionNode, index = -1) => {
     typeAnnotated.left = functionNode.params[0].typeAnnotation?.typeAnnotation ?? anyTypeAnnotation;
     typeAnnotated.right = functionNode.params[1].typeAnnotation?.typeAnnotation ?? anyTypeAnnotation;
   } else if (functionNode.params.length == 1) {
-    typeAnnotated.unary = functionNode.params[0].typeAnnotation.typeAnnotation;
+    typeAnnotated.argument = functionNode.params[0].typeAnnotation.typeAnnotation;
   } else {
     throw path.buildCodeFrameError("Invalid Params Count");
   }

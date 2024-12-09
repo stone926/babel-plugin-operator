@@ -30,10 +30,11 @@ let str3 = "ppp" - "qqq";
 let r = /vue$/;
 // let xx: bigint = 2n;
 
-let nn1 = !-1;
+let nn1 = $operator["not"]["0"](-1);
 let mm1 = "mm";
-mm1++;
-++mm1;
+mm1;
+mm1 = $operator["incrementSuffix"]["0"](mm1);
+(mm1 = $operator["incrementPrefix"]["0"](mm1));
 (mm1 = $operator["plusAssignment"]["0"](mm1, 1));
 function foo() {}
 foo();
