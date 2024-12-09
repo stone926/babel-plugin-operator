@@ -166,6 +166,42 @@ var getVarVisitor = (outer) => {
   return outer.isTs ? tsVariableDeclarationVisitor(outer) : jsVariableDeclarationVisitor(outer);
 };
 
+const isSameType = (typeAnnotation1, typeAnnotation2) => {
+  if (typeAnnotation1?.type === typeAnnotation2?.type) {
+    if (typeAnnotation1.type === "TSTypeReference") {
+      let t1 = typeAnnotation1.typeName;
+      let t2 = typeAnnotation2.typeName;
+      return t1.name === t2.name;
+    } else {
+      return true;
+    }
+  } else return false;
+};
+
+// 只支持identifier+identifier或literal+literal，并且类型显式声明，因为babel没有类型检查
+const getType = (node, scope) => {
+  if (t.isIdentifier(node)) {
+    const binding = scope.getBinding(node.name);
+    return binding?.identifier.typeAnnotation?.typeAnnotation;
+  } else if (t.isStringLiteral(node) || t.isTemplateLiteral(node)) {
+    return t.tsStringKeyword();
+  } else if (t.isNumericLiteral(node)) {
+    return t.tsNumberKeyword();
+  } else if (t.isNullLiteral(node)) {
+    return t.tsNullKeyword();
+  } else if (t.isBooleanLiteral(node)) {
+    return t.tsBooleanKeyword();
+  } else if (t.isRegExpLiteral(node)) {
+    return t.tsTypeReference(t.identifier("RegExp"));
+  } else if (t.isBigIntLiteral(node)) {
+    return t.tsBigIntKeyword();
+  } else if (t.isDecimalLiteral(node)) { // !! what's this?
+    return t.tsNumberKeyword();
+  } else if (t.isUnaryExpression(node)) {
+    return node.operator === '-' && t.isNumericLiteral(node.argument) ? t.tsNumberKeyword() : undefined;
+  }
+};
+
 const fromLiteral = (literal) => {
   if (typeof literal === "number" || literal instanceof Number) {
     return t.numericLiteral(Number(literal));
@@ -194,13 +230,14 @@ const buildAssignment = (obj, operator) => {
     try {
       right = fromLiteral(right);
     } catch {
-      right = right.raw ?? right;
+      right = right[kRaw] ?? right;
     }
     return build(t.assignmentExpression(
       operator, obj, right
     ))
   };
 };
+
 
 /**
  * foo.bar()["="](baz.goo)
@@ -216,7 +253,7 @@ const build = (_obj) => {
     t.isExpression(item) ? item : fromLiteral(item)
   ))), {
     get(target, prop) {
-      if (prop === "raw") {
+      if (prop === kRaw) {
         return obj;
       } else if (isAssignmentOperator(prop)) {
         return buildAssignment(obj, prop);
@@ -228,6 +265,9 @@ const build = (_obj) => {
     }
   });
 };
+
+let kRaw = Symbol("raw");
+build.raw = kRaw;
 
 function index ({ types: t }) {
   return {
@@ -254,7 +294,34 @@ function index ({ types: t }) {
           const operator = outer.registeredOperators.get(key);
           if (operator) {
             const replacer = replacement(build(operatorObjName)[operator], path);
-            path.replaceWith(replacer.raw ?? replacer);
+            if (replacer) path.replaceWith(replacer[build.raw] ?? replacer);
+          }
+        };
+        const visitorFactoryTs = (replacement, typeKeys, tail = () => "") => (path) => {
+          const operatorObjectParent = path.findParent((parentPath) =>
+            t.isVariableDeclaration(parentPath) && operatorObjName == parentPath.node.declarations?.[0].id.name
+          );
+          if (operatorObjectParent) return;
+          let key = path.node.operator;
+          key += tail(path);
+          const operator = outer.registeredOperators.get(key);
+          if (operator) {
+            const types = operator.types;
+            types.forEach((type, index) => {
+              let allSameType = true;
+              typeKeys.forEach((typeKey) => {
+                allSameType = allSameType && isSameType(getType(path.node[typeKey], path.scope), type[typeKey]);
+              });
+              if (allSameType) {
+                let replacer;
+                if (type.index == -1) {
+                  replacer = replacement(build(operatorObjName)[operator], path);
+                } else {
+                  replacer = replacement(build(operatorObjName)[operator][index], path);
+                }
+                if (replacer) path.replaceWith(replacer[build.raw] ?? replacer);
+              }
+            });
           }
         };
 
@@ -288,17 +355,16 @@ function index ({ types: t }) {
               builded(left, right)
             ),
             AssignmentExpression: visitorFactory((builded, { node: { left, right } }) => t.parenthesizedExpression(
-              build(left)['='](builded(left, right)).raw
+              build(left)['='](builded(left, right))[build.raw]
             )),
             UpdateExpression: visitorFactory((builded, path) => {
               if (path.node.prefix) {
                 return t.parenthesizedExpression(
-                  build(path.node.argument)['='](builded(path.node.argument)).raw
+                  build(path.node.argument)['='](builded(path.node.argument))[build.raw]
                 )
               } else {
                 path.replaceWith(path.node.argument);
-                path.insertAfter(build(path.node)['='](builded(path.node)).raw);
-                return path.node;
+                path.insertAfter(build(path.node)['='](builded(path.node))[build.raw]);
               }
             }, (path) => path.node.prefix),
             UnaryExpression: visitorFactory(
@@ -307,7 +373,32 @@ function index ({ types: t }) {
             )
           });
         } else {
-          return;
+          path$1.traverse({
+            "BinaryExpression|LogicalExpression": visitorFactoryTs((builded, { node: { left, right } }) =>
+              builded(left, right),
+              ["left", "right"]
+            ),
+            AssignmentExpression: visitorFactoryTs((builded, { node: { left, right } }) =>
+              build(left)['='](builded(left, right))[build.raw],
+              ["left", "right"]
+            ),
+            UpdateExpression: visitorFactoryTs((builded, path) => {
+              if (path.node.prefix) {
+                return t.parenthesizedExpression(
+                  build(path.node.argument)['='](builded(path.node.argument))[build.raw]
+                );
+              } else {
+                path.replaceWith(path.node.argument);
+                path.insertAfter(
+                  build(path.node)['='](builded(path.node))[build.raw]
+                );
+              }
+            }, ["unary"], (path) => path.node.prefix),
+            UnaryExpression: visitorFactoryTs((builded, { node: { argument } }) =>
+              builded(argument),
+              ["unary"], (path) => path.node.operator === '-' ? "negative" : ""
+            )
+          });
         }
       }
     },

@@ -41,14 +41,6 @@ export const getType = (node, scope) => {
   }
 }
 
-export const memberExpression = (obj, prop, computed = false) => {
-  return new Proxy(t.memberExpression(obj, prop, computed), {
-    get(target, prop) {
-      return t.memberExpression(target, t.numericLiteral(Number(prop)), true)
-    }
-  });
-}
-
 export const fromLiteral = (literal) => {
   if (typeof literal === "number" || literal instanceof Number) {
     return t.numericLiteral(Number(literal));
@@ -77,13 +69,14 @@ export const buildAssignment = (obj, operator) => {
     try {
       right = fromLiteral(right);
     } catch {
-      right = right.raw ?? right;
+      right = right[kRaw] ?? right;
     }
     return build(t.assignmentExpression(
       operator, obj, right
     ))
   };
 }
+
 
 /**
  * foo.bar()["="](baz.goo)
@@ -99,7 +92,7 @@ export const build = (_obj) => {
     t.isExpression(item) ? item : fromLiteral(item)
   ))), {
     get(target, prop) {
-      if (prop === "raw") {
+      if (prop === kRaw) {
         return obj;
       } else if (isAssignmentOperator(prop)) {
         return buildAssignment(obj, prop);
@@ -111,3 +104,6 @@ export const build = (_obj) => {
     }
   });
 }
+
+let kRaw = Symbol("raw");
+build.raw = kRaw;

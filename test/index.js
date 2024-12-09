@@ -4,4 +4,4 @@ import generator from "@babel/generator";
 
 const id = build("obj");
 const node = id(t.identifier("identifier")).lll[0]['>>>='](build("p").k()).func();
-console.log(generator.default(node.raw));
+console.log(generator.default(node[build.raw]));
