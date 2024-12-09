@@ -4,7 +4,7 @@ import parser from "@babel/parser";
 import traverse from "@babel/traverse";
 import syntaxTypeScript from "@babel/plugin-syntax-typescript";
 import getVarVisitor, { isTs } from "./util/variableDeclarationProvider.js";
-import { getType, isSameType } from "./util/types.js";
+import { getType, isSameType, memberExpression, build } from "./util/types.js";
 
 export default function ({ types: t }) {
   return {
@@ -30,7 +30,8 @@ export default function ({ types: t }) {
           key += tail(path);
           const operator = outer.registeredOperators.get(key);
           if (operator) {
-            path.replaceWith(replacement(operator, path));
+            const replacer = replacement(build(operatorObjName)[operator], path);
+            path.replaceWith(replacer.raw ?? replacer);
           }
         }
 
@@ -58,53 +59,32 @@ export default function ({ types: t }) {
         } else { // 如果没有import $operator，在当前文件中寻找并注册重载
           path.traverse({ VariableDeclaration });
         }
-        // console.log(outer.registeredOperators)
         if (!outer.isTs) {
           path.traverse({
-            "BinaryExpression|LogicalExpression": visitorFactory((operator, path) => t.callExpression(
-              t.memberExpression(t.identifier(operatorObjName), t.identifier(operator)),
-              [path.node.left, path.node.right]
+            "BinaryExpression|LogicalExpression": visitorFactory((builded, { node: { left, right } }) =>
+              builded(left, right)
+            ),
+            AssignmentExpression: visitorFactory((builded, { node: { left, right } }) => t.parenthesizedExpression(
+              build(left)['='](builded(left, right)).raw
             )),
-            AssignmentExpression: visitorFactory((operator, path) => t.parenthesizedExpression(
-              t.assignmentExpression(
-                "=", path.node.left, t.callExpression(
-                  t.memberExpression(t.identifier(operatorObjName), t.identifier(operator)),
-                  [path.node.left, path.node.right]
-                )
-              ), path.node.left
-            )),
-            UpdateExpression: visitorFactory((operator, path) => {
+            UpdateExpression: visitorFactory((builded, path) => {
               if (path.node.prefix) {
                 return t.parenthesizedExpression(
-                  t.assignmentExpression(
-                    "=", path.node.argument, t.callExpression(
-                      t.memberExpression(t.identifier(operatorObjName), t.identifier(operator)),
-                      [path.node.argument]
-                    )
-                  )
+                  build(path.node.argument)['='](builded(path.node.argument)).raw
                 )
               } else {
                 path.replaceWith(path.node.argument);
-                path.insertAfter(
-                  t.expressionStatement(
-                    t.assignmentExpression(
-                      "=", path.node, t.callExpression(
-                        t.memberExpression(t.identifier(operatorObjName), t.identifier(operator)),
-                        [path.node]
-                      )
-                    )
-                  )
-                );
+                path.insertAfter(build(path.node)['='](builded(path.node)).raw);
                 return path.node;
               }
             }, (path) => path.node.prefix),
-            UnaryExpression: visitorFactory((operator, path) => t.callExpression(
-              t.memberExpression(t.identifier(operatorObjName), t.identifier(operator)),
-              [path.node.argument]
-            ), (path) => path.node.operator === '-' ? "negative" : "")
+            UnaryExpression: visitorFactory(
+              (builded, { node: { argument } }) => builded(argument),
+              (path) => path.node.operator === '-' ? "negative" : ""
+            )
           });
         } else {
-          let f = true;
+          return;
           path.traverse({
             "BinaryExpression|LogicalExpression": visitorFactory((operator, path) => {
               let R = path.node;
@@ -119,11 +99,9 @@ export default function ({ types: t }) {
                     );
                   } else {
                     R = t.callExpression(
-                      t.memberExpression(
-                        t.memberExpression(
-                          t.identifier(operatorObjName), t.identifier(operator.toString())
-                        ), t.numericLiteral(index), true
-                      ), [path.node.left, path.node.right]
+                      memberExpression(
+                        t.identifier(operatorObjName), t.identifier(operator.toString())
+                      )[index], [path.node.left, path.node.right]
                     );
                   }
                 }
@@ -207,7 +185,6 @@ export default function ({ types: t }) {
                         )
                       );
                     } else {
-                      // console.log(path.node.argument)
                       path.replaceWith(path.node.argument);
                       path.insertAfter(
                         t.expressionStatement(
@@ -232,7 +209,6 @@ export default function ({ types: t }) {
             UnaryExpression: visitorFactory((operator, path) => {
               let R = path.node;
               const unaryType = getType(path.node.argument, path.scope, path.buildCodeFrameError);
-              console.log(path.node)
               operator.types.forEach((type, index) => {
                 if (isSameType(unaryType, type.unary)) {
                   if (type.index == -1) {

@@ -48,4 +48,13 @@ const m = {
   typeof: "typeof"
 };
 
+export const isAssignmentOperator = (str) => {
+  for (let key in m) {
+    if ((key.endsWith("Assignment") && m[key] === str)||(str==="=")) {
+      return true;
+    }
+  }
+  return false;
+}
+
 export default m;

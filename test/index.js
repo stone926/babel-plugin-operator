@@ -1,6 +1,7 @@
-import lib1a from "./lib1.cjs?query=1"
-import * as lib1b from "./lib1.cjs?query=2"
-console.log("import lib1a: ", lib1a, "\n")
-console.log("import * as lib1b: ", lib1b, "\n-------------------------------\n")
+import { build } from "../src/util/types.js";
+import * as t from "@babel/types";
+import generator from "@babel/generator";
 
-console.log(import.meta)
+const id = build("obj");
+const node = id(t.identifier("identifier")).lll[0]['>>>='](build("p").k()).func();
+console.log(generator.default(node.raw));

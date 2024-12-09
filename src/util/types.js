@@ -1,14 +1,16 @@
 import * as t from "@babel/types";
+import { isAssignmentOperator } from "../behavior/supportedOperators.js";
 
 export const typeKnowable = (node/* :Expression */) => {
   return t.isIdentifier(node) || t.isLiteral(node);
 }
 
 export const isSameType = (typeAnnotation1, typeAnnotation2) => {
-  // console.log(typeAnnotation1, "vs", typeAnnotation2, "\n");
   if (typeAnnotation1?.type === typeAnnotation2?.type) {
     if (typeAnnotation1.type === "TSTypeReference") {
-      return typeAnnotation1.typeName.name === typeAnnotation2.typeName.name
+      let t1 = typeAnnotation1.typeName;
+      let t2 = typeAnnotation2.typeName;
+      return t1.name === t2.name;
     } else {
       return true;
     }
@@ -16,10 +18,10 @@ export const isSameType = (typeAnnotation1, typeAnnotation2) => {
 }
 
 // 只支持identifier+identifier或literal+literal，并且类型显式声明，因为babel没有类型检查
-export const getType = (node, scope, err) => {
+export const getType = (node, scope) => {
   if (t.isIdentifier(node)) {
     const binding = scope.getBinding(node.name);
-    return binding.identifier.typeAnnotation?.typeAnnotation;
+    return binding?.identifier.typeAnnotation?.typeAnnotation;
   } else if (t.isStringLiteral(node) || t.isTemplateLiteral(node)) {
     return t.tsStringKeyword();
   } else if (t.isNumericLiteral(node)) {
@@ -37,4 +39,75 @@ export const getType = (node, scope, err) => {
   } else if (t.isUnaryExpression(node)) {
     return node.operator === '-' && t.isNumericLiteral(node.argument) ? t.tsNumberKeyword() : undefined;
   }
+}
+
+export const memberExpression = (obj, prop, computed = false) => {
+  return new Proxy(t.memberExpression(obj, prop, computed), {
+    get(target, prop) {
+      return t.memberExpression(target, t.numericLiteral(Number(prop)), true)
+    }
+  });
+}
+
+export const fromLiteral = (literal) => {
+  if (typeof literal === "number" || literal instanceof Number) {
+    return t.numericLiteral(Number(literal));
+  } else if (typeof literal === "string" || literal instanceof String) {
+    return t.stringLiteral(String(literal));
+  } else if (typeof literal === "boolean" || literal instanceof Boolean) {
+    return t.booleanLiteral(Boolean(literal));
+  } else if (literal === undefined) {
+    return t.identifier("undefined");
+  } else if (literal === null) {
+    return t.nullLiteral();
+  } else {
+    throw new TypeError(`cannot build literal node from an object ${literal}`);
+  }
+}
+
+/**
+ * @param {import("@babel/types").Expression} _obj 赋值语句左值
+ * @param {string} operator 赋值运算符
+ * @returns @param _right build过后的对象或literal
+ */
+export const buildAssignment = (obj, operator) => {
+  return (_right) => {
+    // let right = t.isExpression(_right)?_right:fromLiteral(_right);
+    let right = _right;
+    try {
+      right = fromLiteral(right);
+    } catch {
+      right = right.raw ?? right;
+    }
+    return build(t.assignmentExpression(
+      operator, obj, right
+    ))
+  };
+}
+
+/**
+ * foo.bar()["="](baz.goo)
+ * @param {*} _obj 
+ * @returns 
+ */
+export const build = (_obj) => {
+  let obj = _obj;
+  if (typeof obj === "string" || obj instanceof String) {
+    obj = t.identifier(String(obj));
+  }
+  return new Proxy((...args) => build(t.callExpression(obj, args.map(item =>
+    t.isExpression(item) ? item : fromLiteral(item)
+  ))), {
+    get(target, prop) {
+      if (prop === "raw") {
+        return obj;
+      } else if (isAssignmentOperator(prop)) {
+        return buildAssignment(obj, prop);
+      } else if (typeof prop === "symbol") {
+        throw new TypeError("please build Symbol by function call");
+      } else {
+        return build(t.memberExpression(obj, t.stringLiteral(prop), true));
+      }
+    }
+  });
 }

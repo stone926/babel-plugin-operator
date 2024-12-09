@@ -19,23 +19,22 @@ let m1 = [[1, 2], [3, 4]];
 m1.rowCount = 2;
 m1.columnCount = 2;
 let m2 = [];
-let m3 = $operator.plus[1](m1, m2); //重载
-let num = $operator.plus[0](1, 2); //重载
-let len = $operator.plus[2]("1", "2"); //重载
-let str = $operator.plus[2]("3", "4"); //不重载
-let num2 = $operator.plus[3](true, 1); //重载
+let m3 = m1 + m2; //重载
+let num = 1 + 2; //重载
+let len = "1" + "2"; //重载
+let str = "3" + "4"; //不重载
+let num2 = true + 1; //重载
 let num3 = 1 + true; //不重载
-let str2 = $operator.minus("aaa", 1);
+let str2 = "aaa" - 1;
 let str3 = "ppp" - "qqq";
 let r = /vue$/;
 // let xx: bigint = 2n;
 
-let nn1 = $operator.not[0](-1);
+let nn1 = !-1;
 let mm1 = "mm";
-mm1;
-mm1 = $operator.incrementSuffix[0](mm1);
-(mm1 = $operator.incrementPrefix[0](mm1));
-(mm1 = $operator.plusAssignment[0](mm1, 1));
+mm1++;
+++mm1;
+mm1 += 1;
 function foo() {}
 foo();
 let bbb = {
