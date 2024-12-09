@@ -100,57 +100,6 @@ export default function ({ types: t }) {
             ["unary"], (path) => path.node.operator === '-' ? "negative" : ""
           )
         });
-        // if (!outer.isTs) {
-        //   path.traverse({
-        //     "BinaryExpression|LogicalExpression": visitorFactoryJs((builded, { node: { left, right } }) =>
-        //       builded(left, right)
-        //     ),
-        //     AssignmentExpression: visitorFactoryJs((builded, { node: { left, right } }) => t.parenthesizedExpression(
-        //       build(left)['='](builded(left, right))[build.raw]
-        //     )),
-        //     UpdateExpression: visitorFactoryJs((builded, path) => {
-        //       if (path.node.prefix) {
-        //         return t.parenthesizedExpression(
-        //           build(path.node.argument)['='](builded(path.node.argument))[build.raw]
-        //         )
-        //       } else {
-        //         path.replaceWith(path.node.argument);
-        //         path.insertAfter(build(path.node)['='](builded(path.node))[build.raw]);
-        //       }
-        //     }, (path) => path.node.prefix),
-        //     UnaryExpression: visitorFactoryJs(
-        //       (builded, { node: { argument } }) => builded(argument),
-        //       (path) => path.node.operator === '-' ? "negative" : ""
-        //     )
-        //   });
-        // } else {
-        //   path.traverse({
-        //     "BinaryExpression|LogicalExpression": visitorFactoryTs((builded, { node: { left, right } }) =>
-        //       builded(left, right),
-        //       ["left", "right"]
-        //     ),
-        //     AssignmentExpression: visitorFactoryTs((builded, { node: { left, right } }) =>
-        //       build(left)['='](builded(left, right))[build.raw],
-        //       ["left", "right"]
-        //     ),
-        //     UpdateExpression: visitorFactoryTs((builded, path) => {
-        //       if (path.node.prefix) {
-        //         return t.parenthesizedExpression(
-        //           build(path.node.argument)['='](builded(path.node.argument))[build.raw]
-        //         );
-        //       } else {
-        //         path.replaceWith(path.node.argument);
-        //         path.insertAfter(
-        //           build(path.node)['='](builded(path.node))[build.raw]
-        //         );
-        //       }
-        //     }, ["unary"], (path) => path.node.prefix),
-        //     UnaryExpression: visitorFactoryTs((builded, { node: { argument } }) =>
-        //       builded(argument),
-        //       ["unary"], (path) => path.node.operator === '-' ? "negative" : ""
-        //     )
-        //   })
-        // }
       }
     },
     post(state) { },
