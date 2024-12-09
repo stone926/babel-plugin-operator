@@ -34,7 +34,7 @@ let nn1 = !-1;
 let mm1 = "mm";
 mm1++;
 ++mm1;
-mm1 = $operator["plusAssignment"]["0"](mm1, 1);
+(mm1 = $operator["plusAssignment"]["0"](mm1, 1));
 function foo() {}
 foo();
 let bbb = {

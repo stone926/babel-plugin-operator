@@ -1,4 +1,5 @@
 import type { RollupOptions } from 'rollup';
+import terser from '@rollup/plugin-terser';
 
 const config: RollupOptions = {
   input: "./src/index.js",
@@ -12,7 +13,15 @@ const config: RollupOptions = {
       format: 'es'
     }
   ],
-  external: [/^node/, /^@babel/]
+  external: [/^node/, /^@babel/],
+  // plugins: [terser({
+  //   compress: {
+  //     defaults: false
+  //   },
+  //   format: {
+  //     comments: false
+  //   }
+  // })]
 };
 
 export default config;

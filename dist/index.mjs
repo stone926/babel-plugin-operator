@@ -101,23 +101,20 @@ const jsVariableDeclarationVisitor = (outer) => (path) => {
     t.assertObjectExpression(path.node.declarations[0].init);
     path.node.declarations[0].init.properties.forEach(item => {
       if (isFunctionOverloader(item)) {
-        // console.log(item.key.name);
         registerOperator(outer.registeredOperators, item.key.name);
       }
     });
   }
 };
 
-const buildType = (functionNode, index=-1) => {
+const buildType = (functionNode, index = -1) => {
   const typeAnnotated = {};
   const anyTypeAnnotation = t.tsAnyKeyword();
   if (functionNode.params.length == 2) {
     typeAnnotated.left = functionNode.params[0].typeAnnotation?.typeAnnotation ?? anyTypeAnnotation;
     typeAnnotated.right = functionNode.params[1].typeAnnotation?.typeAnnotation ?? anyTypeAnnotation;
-    // console.log(typeAnnotated.left, typeAnnotated.right);
   } else if (functionNode.params.length == 1) {
     typeAnnotated.unary = functionNode.params[0].typeAnnotation.typeAnnotation;
-    // console.log(typeAnnotated.unary)
   } else {
     throw path.buildCodeFrameError("Invalid Params Count");
   }
@@ -284,7 +281,7 @@ function index ({ types: t }) {
         this.isTs = isTs(state.filename);
         let operatorFileName = undefined, operatorObjName = this.operatorObjectName;
         const VariableDeclaration = getVarVisitor(outer);
-        const visitorFactory = (replacement, tail = () => "") => (path) => {
+        const visitorFactory = (replacement, typeKeys, tail = () => "") => (path) => {
           const operatorObjectParent = path.findParent((parentPath) =>
             t.isVariableDeclaration(parentPath) && operatorObjName == parentPath.node.declarations?.[0].id.name
           );
@@ -293,35 +290,26 @@ function index ({ types: t }) {
           key += tail(path);
           const operator = outer.registeredOperators.get(key);
           if (operator) {
-            const replacer = replacement(build(operatorObjName)[operator], path);
-            if (replacer) path.replaceWith(replacer[build.raw] ?? replacer);
-          }
-        };
-        const visitorFactoryTs = (replacement, typeKeys, tail = () => "") => (path) => {
-          const operatorObjectParent = path.findParent((parentPath) =>
-            t.isVariableDeclaration(parentPath) && operatorObjName == parentPath.node.declarations?.[0].id.name
-          );
-          if (operatorObjectParent) return;
-          let key = path.node.operator;
-          key += tail(path);
-          const operator = outer.registeredOperators.get(key);
-          if (operator) {
-            const types = operator.types;
-            types.forEach((type, index) => {
-              let allSameType = true;
-              typeKeys.forEach((typeKey) => {
-                allSameType = allSameType && isSameType(getType(path.node[typeKey], path.scope), type[typeKey]);
-              });
-              if (allSameType) {
-                let replacer;
-                if (type.index == -1) {
-                  replacer = replacement(build(operatorObjName)[operator], path);
-                } else {
-                  replacer = replacement(build(operatorObjName)[operator][index], path);
+            let replacer;
+            if (outer.isTs) {
+              const types = operator.types;
+              types.forEach((type, index) => {
+                let allSameType = true;
+                typeKeys.forEach((typeKey) => {
+                  allSameType = allSameType && isSameType(getType(path.node[typeKey], path.scope), type[typeKey]);
+                });
+                if (allSameType) {
+                  if (type.index == -1) {
+                    replacer = replacement(build(operatorObjName)[operator], path);
+                  } else {
+                    replacer = replacement(build(operatorObjName)[operator][index], path);
+                  }
                 }
-                if (replacer) path.replaceWith(replacer[build.raw] ?? replacer);
-              }
-            });
+              });
+            } else {
+              replacer = replacement(build(operatorObjName)[operator], path);
+            }
+            if (replacer) path.replaceWith(replacer[build.raw] ?? replacer);
           }
         };
 
@@ -349,57 +337,80 @@ function index ({ types: t }) {
         } else { // 如果没有import $operator，在当前文件中寻找并注册重载
           path$1.traverse({ VariableDeclaration });
         }
-        if (!outer.isTs) {
-          path$1.traverse({
-            "BinaryExpression|LogicalExpression": visitorFactory((builded, { node: { left, right } }) =>
-              builded(left, right)
-            ),
-            AssignmentExpression: visitorFactory((builded, { node: { left, right } }) => t.parenthesizedExpression(
-              build(left)['='](builded(left, right))[build.raw]
-            )),
-            UpdateExpression: visitorFactory((builded, path) => {
-              if (path.node.prefix) {
-                return t.parenthesizedExpression(
-                  build(path.node.argument)['='](builded(path.node.argument))[build.raw]
-                )
-              } else {
-                path.replaceWith(path.node.argument);
-                path.insertAfter(build(path.node)['='](builded(path.node))[build.raw]);
-              }
-            }, (path) => path.node.prefix),
-            UnaryExpression: visitorFactory(
-              (builded, { node: { argument } }) => builded(argument),
-              (path) => path.node.operator === '-' ? "negative" : ""
-            )
-          });
-        } else {
-          path$1.traverse({
-            "BinaryExpression|LogicalExpression": visitorFactoryTs((builded, { node: { left, right } }) =>
-              builded(left, right),
-              ["left", "right"]
-            ),
-            AssignmentExpression: visitorFactoryTs((builded, { node: { left, right } }) =>
-              build(left)['='](builded(left, right))[build.raw],
-              ["left", "right"]
-            ),
-            UpdateExpression: visitorFactoryTs((builded, path) => {
-              if (path.node.prefix) {
-                return t.parenthesizedExpression(
-                  build(path.node.argument)['='](builded(path.node.argument))[build.raw]
-                );
-              } else {
-                path.replaceWith(path.node.argument);
-                path.insertAfter(
-                  build(path.node)['='](builded(path.node))[build.raw]
-                );
-              }
-            }, ["unary"], (path) => path.node.prefix),
-            UnaryExpression: visitorFactoryTs((builded, { node: { argument } }) =>
-              builded(argument),
-              ["unary"], (path) => path.node.operator === '-' ? "negative" : ""
-            )
-          });
-        }
+        path$1.traverse({
+          "BinaryExpression|LogicalExpression": visitorFactory((builded, { node: { left, right } }) =>
+            builded(left, right),
+            ["left", "right"]
+          ),
+          AssignmentExpression: visitorFactory((builded, { node: { left, right } }) => t.parenthesizedExpression(
+            build(left)['='](builded(left, right))[build.raw]
+          ), ["left", "right"]),
+          UpdateExpression: visitorFactory((builded, path) => {
+            if (path.node.prefix) {
+              return t.parenthesizedExpression(
+                build(path.node.argument)['='](builded(path.node.argument))[build.raw]
+              )
+            } else {
+              path.replaceWith(path.node.argument);
+              path.insertAfter(build(path.node)['='](builded(path.node))[build.raw]);
+            }
+          }, ["unary"], (path) => path.node.prefix),
+          UnaryExpression: visitorFactory(
+            (builded, { node: { argument } }) => builded(argument),
+            ["unary"], (path) => path.node.operator === '-' ? "negative" : ""
+          )
+        });
+        // if (!outer.isTs) {
+        //   path.traverse({
+        //     "BinaryExpression|LogicalExpression": visitorFactoryJs((builded, { node: { left, right } }) =>
+        //       builded(left, right)
+        //     ),
+        //     AssignmentExpression: visitorFactoryJs((builded, { node: { left, right } }) => t.parenthesizedExpression(
+        //       build(left)['='](builded(left, right))[build.raw]
+        //     )),
+        //     UpdateExpression: visitorFactoryJs((builded, path) => {
+        //       if (path.node.prefix) {
+        //         return t.parenthesizedExpression(
+        //           build(path.node.argument)['='](builded(path.node.argument))[build.raw]
+        //         )
+        //       } else {
+        //         path.replaceWith(path.node.argument);
+        //         path.insertAfter(build(path.node)['='](builded(path.node))[build.raw]);
+        //       }
+        //     }, (path) => path.node.prefix),
+        //     UnaryExpression: visitorFactoryJs(
+        //       (builded, { node: { argument } }) => builded(argument),
+        //       (path) => path.node.operator === '-' ? "negative" : ""
+        //     )
+        //   });
+        // } else {
+        //   path.traverse({
+        //     "BinaryExpression|LogicalExpression": visitorFactoryTs((builded, { node: { left, right } }) =>
+        //       builded(left, right),
+        //       ["left", "right"]
+        //     ),
+        //     AssignmentExpression: visitorFactoryTs((builded, { node: { left, right } }) =>
+        //       build(left)['='](builded(left, right))[build.raw],
+        //       ["left", "right"]
+        //     ),
+        //     UpdateExpression: visitorFactoryTs((builded, path) => {
+        //       if (path.node.prefix) {
+        //         return t.parenthesizedExpression(
+        //           build(path.node.argument)['='](builded(path.node.argument))[build.raw]
+        //         );
+        //       } else {
+        //         path.replaceWith(path.node.argument);
+        //         path.insertAfter(
+        //           build(path.node)['='](builded(path.node))[build.raw]
+        //         );
+        //       }
+        //     }, ["unary"], (path) => path.node.prefix),
+        //     UnaryExpression: visitorFactoryTs((builded, { node: { argument } }) =>
+        //       builded(argument),
+        //       ["unary"], (path) => path.node.operator === '-' ? "negative" : ""
+        //     )
+        //   })
+        // }
       }
     },
     post(state) { },

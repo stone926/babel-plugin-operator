@@ -39,23 +39,20 @@ export const jsVariableDeclarationVisitor = (outer) => (path) => {
     t.assertObjectExpression(path.node.declarations[0].init);
     path.node.declarations[0].init.properties.forEach(item => {
       if (isFunctionOverloader(item)) {
-        // console.log(item.key.name);
         registerOperator(outer.registeredOperators, item.key.name);
       }
     });
   }
 };
 
-const buildType = (functionNode, index=-1) => {
+const buildType = (functionNode, index = -1) => {
   const typeAnnotated = {};
   const anyTypeAnnotation = t.tsAnyKeyword();
   if (functionNode.params.length == 2) {
     typeAnnotated.left = functionNode.params[0].typeAnnotation?.typeAnnotation ?? anyTypeAnnotation;
     typeAnnotated.right = functionNode.params[1].typeAnnotation?.typeAnnotation ?? anyTypeAnnotation;
-    // console.log(typeAnnotated.left, typeAnnotated.right);
   } else if (functionNode.params.length == 1) {
     typeAnnotated.unary = functionNode.params[0].typeAnnotation.typeAnnotation;
-    // console.log(typeAnnotated.unary)
   } else {
     throw path.buildCodeFrameError("Invalid Params Count");
   }
