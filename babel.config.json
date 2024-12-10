@@ -16,6 +16,6 @@
     "@babel/preset-typescript"
   ],
   "plugins": [
-    ["./dist/index.mjs", { "operatorObjectName": "$operator", "encoding": "utf8" }]
+    ["./src/index.js", { "operatorObjectName": "$operator", "encoding": "utf8" }]
   ]
 }

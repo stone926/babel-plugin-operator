@@ -14,7 +14,9 @@ const isArrayOverloader = (node) => {
 
 const registerOperator = (registry, name) => {
   const primitiveName = name.toString();
-  if (Object.keys(supportedOperators).includes(primitiveName)) {
+  if (Object.values(supportedOperators).includes(primitiveName)) {
+    registry.set(name, name);
+  } else if (Object.keys(supportedOperators).includes(primitiveName)) {
     if (primitiveName !== "incrementSuffix" &&
       primitiveName !== "incrementPrefix" &&
       primitiveName !== "decrementSuffix" &&
@@ -39,22 +41,22 @@ export const jsVariableDeclarationVisitor = (outer) => (path) => {
     t.assertObjectExpression(path.node.declarations[0].init);
     path.node.declarations[0].init.properties.forEach(item => {
       if (isFunctionOverloader(item)) {
-        registerOperator(outer.registeredOperators, item.key.name);
+        registerOperator(outer.registeredOperators, item.key.name ?? item.key.value);
       }
     });
   }
 };
 
-const buildType = (functionNode, index = -1) => {
-  const typeAnnotated = {};
-  const anyTypeAnnotation = t.tsAnyKeyword();
-  if (functionNode.params.length == 2) {
+const buildType = (functionNode, err, index = -1) => {
+  const typeAnnotated = {}, anyTypeAnnotation = t.tsAnyKeyword();
+  const paramLength = functionNode.params.length;
+  if (paramLength == 2) {
     typeAnnotated.left = functionNode.params[0].typeAnnotation?.typeAnnotation ?? anyTypeAnnotation;
     typeAnnotated.right = functionNode.params[1].typeAnnotation?.typeAnnotation ?? anyTypeAnnotation;
-  } else if (functionNode.params.length == 1) {
+  } else if (paramLength == 1) {
     typeAnnotated.argument = functionNode.params[0].typeAnnotation.typeAnnotation;
   } else {
-    throw path.buildCodeFrameError("Invalid Params Count");
+    throw err(`Invalid Params Count. Expected 1 or 2, but got ${paramLength}`);
   }
   typeAnnotated.return = functionNode.returnType?.typeAnnotation ?? anyTypeAnnotation;
   typeAnnotated.index = index;
@@ -69,11 +71,11 @@ export const tsVariableDeclarationVisitor = (outer) => (path) => {
       name.types = [];
       if (isFunctionOverloader(item)) {
         const functionNode = t.isObjectMethod(item) ? item : item.value;
-        name.types.push(buildType(functionNode));
+        name.types.push(buildType(functionNode, path.buildCodeFrameError));
       } else if (isArrayOverloader(item)) {
         item.value.elements.forEach((functionNode, index) => {
           t.assertFunction(functionNode);
-          name.types.push(buildType(functionNode, index));
+          name.types.push(buildType(functionNode, path.buildCodeFrameError, index));
         });
       }
       registerOperator(outer.registeredOperators, name);

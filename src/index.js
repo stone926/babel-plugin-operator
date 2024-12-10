@@ -82,14 +82,13 @@ export default function ({ types: t }) {
             builded(left, right),
             ["left", "right"]
           ),
-          AssignmentExpression: visitorFactory((builded, { node: { left, right } }) => t.parenthesizedExpression(
-            build(left)['='](builded(left, right))[build.raw]
-          ), ["left", "right"]),
+          AssignmentExpression: visitorFactory((builded, { node: { left, right } }) =>
+            build(left)['='](builded(left, right))[build.raw],
+            ["left", "right"]
+          ),
           UpdateExpression: visitorFactory((builded, path) =>
             path.node.prefix ?
-              t.parenthesizedExpression(
-                build(path.node.argument)['='](builded(path.node.argument))[build.raw]
-              ) :
+              build(path.node.argument)['='](builded(path.node.argument))[build.raw] :
               void (
                 path.replaceWith(path.node.argument),
                 path.insertAfter(build(path.node)['='](builded(path.node))[build.raw])

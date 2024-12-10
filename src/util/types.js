@@ -6,11 +6,13 @@ export const typeKnowable = (node/* :Expression */) => {
 }
 
 export const isSameType = (typeAnnotation1, typeAnnotation2) => {
-  if (typeAnnotation1?.type === typeAnnotation2?.type) {
+  if (typeAnnotation1.type === typeAnnotation2.type) {
     if (typeAnnotation1.type === "TSTypeReference") {
       let t1 = typeAnnotation1.typeName;
       let t2 = typeAnnotation2.typeName;
       return t1.name === t2.name;
+    } else if (typeAnnotation1.type === "TSUnionType") {
+      throw new TypeError("Ambiguous type: TSUnionType is not supported");
     } else {
       return true;
     }
@@ -52,6 +54,8 @@ export const fromLiteral = (literal) => {
     return t.identifier("undefined");
   } else if (literal === null) {
     return t.nullLiteral();
+  } else if (typeof literal === "symbol" || literal instanceof Symbol) {
+    return t.identifier(literal.description)
   } else {
     throw new TypeError(`cannot build literal node from an object ${literal}`);
   }
@@ -64,7 +68,6 @@ export const fromLiteral = (literal) => {
  */
 export const buildAssignment = (obj, operator) => {
   return (_right) => {
-    // let right = t.isExpression(_right)?_right:fromLiteral(_right);
     let right = _right;
     try {
       right = fromLiteral(right);
@@ -79,7 +82,7 @@ export const buildAssignment = (obj, operator) => {
 
 
 /**
- * foo.bar()["="](baz.goo)
+ * foo.bar()["="](build("baz").goo)
  * @param {*} _obj 
  * @returns 
  */
@@ -91,13 +94,13 @@ export const build = (_obj) => {
   return new Proxy((...args) => build(t.callExpression(obj, args.map(item =>
     t.isExpression(item) ? item : fromLiteral(item)
   ))), {
-    get(target, prop) {
+    get(target, prop, receiver) {
       if (prop === kRaw) {
         return obj;
       } else if (isAssignmentOperator(prop)) {
         return buildAssignment(obj, prop);
       } else if (typeof prop === "symbol") {
-        throw new TypeError("please build Symbol by function call");
+        return build(t.memberExpression(obj, t.identifier(prop.description), true));
       } else {
         return build(t.memberExpression(obj, t.stringLiteral(prop), true));
       }

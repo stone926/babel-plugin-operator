@@ -1,5 +1,5 @@
-export const $operator = {
-  plus(left, right) {
+const $operator = {
+  "+"(left, right) {
     return parseInt(left) + parseInt(right);
   },
   minus(left, right) {
@@ -49,13 +49,13 @@ export const $operator = {
     return left % right + 1;
   },
   and(l, r) {
-    
+
   },
   or(l, r) {
 
   },
   not(x) {
-    
+
   },
   typeof(x) {
 
@@ -77,6 +77,7 @@ function f() { return 999 }
 var p = [1, 2, 3, 4, 5, 6, 7, 8, 9], x = 0;
 p[++x] = (x = f());
 p[x++] = 1;
+p[x %= y] = 2;
 console.log(p);
 let obj = {
   a: 1
@@ -84,3 +85,5 @@ let obj = {
 let kkk = obj++;
 obj++;
 console.log(obj);
+
+export default $operator;
