@@ -1,5 +1,5 @@
 const $operator = {
-  "+"(left, right) {
+  plus(left, right) {
     return parseInt(left) + parseInt(right);
   },
   minus(left, right) {

@@ -14,9 +14,7 @@ const isArrayOverloader = (node) => {
 
 const registerOperator = (registry, name) => {
   const primitiveName = name.toString();
-  if (Object.values(supportedOperators).includes(primitiveName)) {
-    registry.set(name, name);
-  } else if (Object.keys(supportedOperators).includes(primitiveName)) {
+  if (Object.keys(supportedOperators).includes(primitiveName)) {
     if (primitiveName !== "incrementSuffix" &&
       primitiveName !== "incrementPrefix" &&
       primitiveName !== "decrementSuffix" &&

@@ -22,6 +22,7 @@ export const isSameType = (typeAnnotation1, typeAnnotation2) => {
 // 只支持identifier+identifier或literal+literal，并且类型显式声明，因为babel没有类型检查
 export const getType = (node, scope) => {
   if (t.isIdentifier(node)) {
+    if (node.name === "undefined") return t.tsUndefinedKeyword();
     const binding = scope.getBinding(node.name);
     return binding?.identifier.typeAnnotation?.typeAnnotation;
   } else if (t.isStringLiteral(node) || t.isTemplateLiteral(node)) {
