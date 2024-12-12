@@ -6,7 +6,7 @@ import syntaxTypeScript from "@babel/plugin-syntax-typescript";
 import getVarVisitor, { isTs } from "./util/variableDeclarationProvider.js";
 import { getType, isSameType, build } from "./util/types.js";
 
-export default function ({ types: t }) {
+export default function ({ types: t }, options, dirname) {
   return {
     pre(state) {
       // key: 运算符; value: MethodName
@@ -102,6 +102,9 @@ export default function ({ types: t }) {
       }
     },
     post(state) { },
-    inherits: syntaxTypeScript.default,
+    inherits: (api, options, dirname) => {
+      options.isTSX = true;
+      return syntaxTypeScript.default(api, options, dirname)
+    },
   }
 }

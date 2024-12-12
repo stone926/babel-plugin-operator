@@ -13,9 +13,24 @@
         "corejs": "3.6.5"
       }
     ],
-    "@babel/preset-typescript"
+    [
+      "@babel/preset-typescript",
+      {}
+    ],
+    [
+      "@babel/preset-react",
+      {
+        "pragma": "h"
+      }
+    ]
   ],
   "plugins": [
-    ["./src/index.js", { "operatorObjectName": "$operator", "encoding": "utf8" }]
+    [
+      "./src/index.js",
+      {
+        "operatorObjectName": "$operator",
+        "encoding": "utf8"
+      }
+    ]
   ]
 }

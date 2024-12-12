@@ -15,7 +15,7 @@ function _defineProperty(e, r, t) { return (r = _toPropertyKey(r)) in e ? Object
 function _toPropertyKey(t) { var i = _toPrimitive(t, "string"); return "symbol" == typeof i ? i : i + ""; }
 function _toPrimitive(t, r) { if ("object" != typeof t || !t) return t; var e = t[Symbol.toPrimitive]; if (void 0 !== e) { var i = e.call(t, r || "default"); if ("object" != typeof i) return i; throw new TypeError("@@toPrimitive must return a primitive value."); } return ("string" === r ? String : Number)(t); }
 const $operator = {
-  "+"(left, right) {
+  plus(left, right) {
     return parseInt(left) + parseInt(right);
   },
   minus(left, right) {
@@ -77,7 +77,7 @@ $operator["not"](-1);
 $operator["typeof"](a);
 $operator["or"](1, 1);
 $operator["and"](a, b);
-$operator["+"](a, b);
+$operator["plus"](a, b);
 (_a = a) !== null && _a !== void 0 ? _a : b;
 a = $operator["plusAssignment"](a, b);
 a >>= b;

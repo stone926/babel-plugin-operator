@@ -101,22 +101,22 @@ const jsVariableDeclarationVisitor = (outer) => (path) => {
     t.assertObjectExpression(path.node.declarations[0].init);
     path.node.declarations[0].init.properties.forEach(item => {
       if (isFunctionOverloader(item)) {
-        registerOperator(outer.registeredOperators, item.key.name);
+        registerOperator(outer.registeredOperators, item.key.name ?? item.key.value);
       }
     });
   }
 };
 
-const buildType = (functionNode, index = -1) => {
-  const typeAnnotated = {};
-  const anyTypeAnnotation = t.tsAnyKeyword();
-  if (functionNode.params.length == 2) {
+const buildType = (functionNode, err, index = -1) => {
+  const typeAnnotated = {}, anyTypeAnnotation = t.tsAnyKeyword();
+  const paramLength = functionNode.params.length;
+  if (paramLength == 2) {
     typeAnnotated.left = functionNode.params[0].typeAnnotation?.typeAnnotation ?? anyTypeAnnotation;
     typeAnnotated.right = functionNode.params[1].typeAnnotation?.typeAnnotation ?? anyTypeAnnotation;
-  } else if (functionNode.params.length == 1) {
+  } else if (paramLength == 1) {
     typeAnnotated.argument = functionNode.params[0].typeAnnotation.typeAnnotation;
   } else {
-    throw path.buildCodeFrameError("Invalid Params Count");
+    throw err(`Invalid Params Count. Expected 1 or 2, but got ${paramLength}`);
   }
   typeAnnotated.return = functionNode.returnType?.typeAnnotation ?? anyTypeAnnotation;
   typeAnnotated.index = index;
@@ -131,11 +131,11 @@ const tsVariableDeclarationVisitor = (outer) => (path) => {
       name.types = [];
       if (isFunctionOverloader(item)) {
         const functionNode = t.isObjectMethod(item) ? item : item.value;
-        name.types.push(buildType(functionNode));
+        name.types.push(buildType(functionNode, path.buildCodeFrameError));
       } else if (isArrayOverloader(item)) {
         item.value.elements.forEach((functionNode, index) => {
           t.assertFunction(functionNode);
-          name.types.push(buildType(functionNode, index));
+          name.types.push(buildType(functionNode, path.buildCodeFrameError, index));
         });
       }
       registerOperator(outer.registeredOperators, name);
@@ -164,11 +164,13 @@ var getVarVisitor = (outer) => {
 };
 
 const isSameType = (typeAnnotation1, typeAnnotation2) => {
-  if (typeAnnotation1?.type === typeAnnotation2?.type) {
+  if (typeAnnotation1.type === typeAnnotation2.type) {
     if (typeAnnotation1.type === "TSTypeReference") {
       let t1 = typeAnnotation1.typeName;
       let t2 = typeAnnotation2.typeName;
       return t1.name === t2.name;
+    } else if (typeAnnotation1.type === "TSUnionType") {
+      throw new TypeError("Ambiguous type: TSUnionType is not supported");
     } else {
       return true;
     }
@@ -178,6 +180,7 @@ const isSameType = (typeAnnotation1, typeAnnotation2) => {
 // 只支持identifier+identifier或literal+literal，并且类型显式声明，因为babel没有类型检查
 const getType = (node, scope) => {
   if (t.isIdentifier(node)) {
+    if (node.name === "undefined") return t.tsUndefinedKeyword();
     const binding = scope.getBinding(node.name);
     return binding?.identifier.typeAnnotation?.typeAnnotation;
   } else if (t.isStringLiteral(node) || t.isTemplateLiteral(node)) {
@@ -210,6 +213,8 @@ const fromLiteral = (literal) => {
     return t.identifier("undefined");
   } else if (literal === null) {
     return t.nullLiteral();
+  } else if (typeof literal === "symbol" || literal instanceof Symbol) {
+    return t.identifier(literal.description)
   } else {
     throw new TypeError(`cannot build literal node from an object ${literal}`);
   }
@@ -222,7 +227,6 @@ const fromLiteral = (literal) => {
  */
 const buildAssignment = (obj, operator) => {
   return (_right) => {
-    // let right = t.isExpression(_right)?_right:fromLiteral(_right);
     let right = _right;
     try {
       right = fromLiteral(right);
@@ -237,7 +241,7 @@ const buildAssignment = (obj, operator) => {
 
 
 /**
- * foo.bar()["="](baz.goo)
+ * foo.bar()["="](build("baz").goo)
  * @param {*} _obj 
  * @returns 
  */
@@ -249,13 +253,13 @@ const build = (_obj) => {
   return new Proxy((...args) => build(t.callExpression(obj, args.map(item =>
     t.isExpression(item) ? item : fromLiteral(item)
   ))), {
-    get(target, prop) {
+    get(target, prop, receiver) {
       if (prop === kRaw) {
         return obj;
       } else if (isAssignmentOperator(prop)) {
         return buildAssignment(obj, prop);
       } else if (typeof prop === "symbol") {
-        throw new TypeError("please build Symbol by function call");
+        return build(t.memberExpression(obj, t.identifier(prop.description), true));
       } else {
         return build(t.memberExpression(obj, t.stringLiteral(prop), true));
       }
@@ -266,7 +270,7 @@ const build = (_obj) => {
 let kRaw = Symbol("raw");
 build.raw = kRaw;
 
-function index ({ types: t }) {
+function index ({ types: t }, options, dirname) {
   return {
     pre(state) {
       // key: 运算符; value: MethodName
@@ -342,14 +346,13 @@ function index ({ types: t }) {
             builded(left, right),
             ["left", "right"]
           ),
-          AssignmentExpression: visitorFactory((builded, { node: { left, right } }) => t.parenthesizedExpression(
-            build(left)['='](builded(left, right))[build.raw]
-          ), ["left", "right"]),
+          AssignmentExpression: visitorFactory((builded, { node: { left, right } }) =>
+            build(left)['='](builded(left, right))[build.raw],
+            ["left", "right"]
+          ),
           UpdateExpression: visitorFactory((builded, path) =>
             path.node.prefix ?
-              t.parenthesizedExpression(
-                build(path.node.argument)['='](builded(path.node.argument))[build.raw]
-              ) :
+              build(path.node.argument)['='](builded(path.node.argument))[build.raw] :
               void (
                 path.replaceWith(path.node.argument),
                 path.insertAfter(build(path.node)['='](builded(path.node))[build.raw])
@@ -363,7 +366,10 @@ function index ({ types: t }) {
       }
     },
     post(state) { },
-    inherits: syntaxTypeScript.default,
+    inherits: (api, options, dirname) => {
+      options.isTSX = true;
+      return syntaxTypeScript.default(api, options, dirname)
+    },
   }
 }
 
